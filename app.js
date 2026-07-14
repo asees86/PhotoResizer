@@ -1,14 +1,18 @@
 "use strict";
 
-const MAX_BYTES = 29 * 1024; // stay safely under the 30 KB limit
-const BAND_HEIGHT = 35;      // white strip for name + date on the photo
+const MAX_BYTES = 29 * 1024;  // stay safely under the 30 KB limit
+const BAND_HEIGHT = 35;       // white strip for name + date on the photo
+const DISPLAY_MAX_W = 360;    // crop canvas display box
+const DISPLAY_MAX_H = 420;
+const MIN_SEL_W = 40;         // smallest allowed selection width (canvas px)
+const HANDLE_HIT = 14;        // corner handle hit radius (canvas px)
 
-/* Convert a canvas to a JPEG blob no larger than maxBytes by stepping
-   quality down. Returns the last (smallest) blob if even the lowest
-   quality overshoots — at 150px wide that practically never happens. */
+/* Convert a canvas to a JPEG blob no larger than maxBytes at the highest
+   quality that fits. At 150 px wide, quality 1.0 almost always fits, so
+   most photos get no visible compression at all. */
 async function toJpegUnder(canvas, maxBytes) {
   let blob = null;
-  for (let q = 0.92; q >= 0.35; q -= 0.07) {
+  for (let q = 1.0; q >= 0.35; q -= 0.02) {
     blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", q));
     if (blob && blob.size <= maxBytes) return blob;
   }
@@ -45,25 +49,22 @@ class ResizeTool {
   /* opts: prefix, targetW, targetH, imageAreaH, hasBand */
   constructor(opts) {
     Object.assign(this, opts);
+    this.ratio = this.targetW / this.imageAreaH; // selection w/h
 
     this.drop = document.getElementById(`${this.prefix}-drop`);
     this.file = document.getElementById(`${this.prefix}-file`);
     this.editor = document.getElementById(`${this.prefix}-editor`);
     this.canvas = document.getElementById(`${this.prefix}-canvas`);
-    this.zoom = document.getElementById(`${this.prefix}-zoom`);
     this.changeBtn = document.getElementById(`${this.prefix}-change`);
     this.preview = document.getElementById(`${this.prefix}-preview`);
-    this.previewActual = document.getElementById(`${this.prefix}-preview-actual`);
     this.sizeInfo = document.getElementById(`${this.prefix}-size`);
     this.download = document.getElementById(`${this.prefix}-download`);
     this.imgWarn = document.getElementById(`${this.prefix}-imgwarn`);
 
     this.ctx = this.canvas.getContext("2d");
     this.img = null;
-    this.scale = 1;
-    this.minScale = 1;
-    this.offsetX = 0;
-    this.offsetY = 0;
+    this.sel = { x: 0, y: 0, w: 0, h: 0 }; // selection in canvas px
+    this.dispScale = 1;                     // canvas px per source-image px
     this.blobUrl = null;
     this.updateTimer = null;
     this.renderSeq = 0;
@@ -121,17 +122,16 @@ class ResizeTool {
     this.drop.hidden = true;
     this.editor.hidden = false;
 
-    const fw = this.canvas.width, fh = this.canvas.height;
-    this.minScale = Math.max(fw / img.width, fh / img.height);
-    this.scale = this.minScale;
-    // center the image in the frame
-    this.offsetX = (fw - img.width * this.scale) / 2;
-    this.offsetY = (fh - img.height * this.scale) / 2;
+    // fit the whole image into the display box
+    this.dispScale = Math.min(DISPLAY_MAX_W / img.width, DISPLAY_MAX_H / img.height);
+    this.canvas.width = Math.max(1, Math.round(img.width * this.dispScale));
+    this.canvas.height = Math.max(1, Math.round(img.height * this.dispScale));
 
-    this.zoom.min = this.minScale;
-    this.zoom.max = this.minScale * 4;
-    this.zoom.step = (this.minScale * 3) / 200;
-    this.zoom.value = this.minScale;
+    // default: largest centered selection with the required ratio
+    const cw = this.canvas.width, ch = this.canvas.height;
+    let w = Math.min(cw, ch * this.ratio);
+    let h = w / this.ratio;
+    this.sel = { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
 
     if (img.width < this.targetW || img.height < this.imageAreaH) {
       this.imgWarn.textContent =
@@ -146,11 +146,49 @@ class ResizeTool {
     this.scheduleUpdate();
   }
 
-  /* ---------- cropper ---------- */
-  bindCropper() {
-    let dragging = false, lastX = 0, lastY = 0;
+  /* ---------- selection cropper ---------- */
+  corners() {
+    const { x, y, w, h } = this.sel;
+    return {
+      tl: { x, y },
+      tr: { x: x + w, y },
+      bl: { x, y: y + h },
+      br: { x: x + w, y: y + h },
+    };
+  }
 
-    // pointer coords -> canvas pixel coords (canvas may be CSS-scaled)
+  hitTest(p) {
+    const c = this.corners();
+    for (const key of ["tl", "tr", "bl", "br"]) {
+      if (Math.abs(p.x - c[key].x) <= HANDLE_HIT && Math.abs(p.y - c[key].y) <= HANDLE_HIT) {
+        return key;
+      }
+    }
+    const s = this.sel;
+    if (p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h) return "move";
+    return "draw";
+  }
+
+  /* Ratio-locked rectangle anchored at (ax, ay) stretched toward (px, py),
+     clamped to the canvas. */
+  ratioRect(ax, ay, px, py) {
+    const R = this.ratio;
+    const sx = px < ax ? -1 : 1;
+    const sy = py < ay ? -1 : 1;
+    let w = Math.max(Math.abs(px - ax), Math.abs(py - ay) * R, MIN_SEL_W);
+    const availW = sx > 0 ? this.canvas.width - ax : ax;
+    const availH = sy > 0 ? this.canvas.height - ay : ay;
+    w = Math.min(w, availW, availH * R);
+    const h = w / R;
+    return { x: sx > 0 ? ax : ax - w, y: sy > 0 ? ay : ay - h, w, h };
+  }
+
+  bindCropper() {
+    let mode = null;          // "move" | "tl"|"tr"|"bl"|"br" | "draw"
+    let start = null;         // pointer position at pointerdown
+    let startSel = null;      // selection at pointerdown
+    let anchor = null;        // fixed corner for resize/draw
+
     const toCanvas = (e) => {
       const r = this.canvas.getBoundingClientRect();
       return {
@@ -159,71 +197,84 @@ class ResizeTool {
       };
     };
 
+    const cursorFor = (hit) => {
+      if (hit === "move") return "move";
+      if (hit === "tl" || hit === "br") return "nwse-resize";
+      if (hit === "tr" || hit === "bl") return "nesw-resize";
+      return "crosshair";
+    };
+
     this.canvas.addEventListener("pointerdown", (e) => {
       if (!this.img) return;
-      dragging = true;
+      e.preventDefault();
       const p = toCanvas(e);
-      lastX = p.x;
-      lastY = p.y;
+      const hit = this.hitTest(p);
+      mode = hit;
+      start = p;
+      startSel = { ...this.sel };
+      if (hit === "tl" || hit === "tr" || hit === "bl" || hit === "br") {
+        const c = this.corners();
+        const opposite = { tl: "br", tr: "bl", bl: "tr", br: "tl" }[hit];
+        anchor = c[opposite];
+      } else if (hit === "draw") {
+        anchor = p;
+      }
       try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* synthetic pointers have no capture */ }
     });
 
     this.canvas.addEventListener("pointermove", (e) => {
-      if (!dragging || !this.img) return;
+      if (!this.img) return;
       const p = toCanvas(e);
-      this.offsetX += p.x - lastX;
-      this.offsetY += p.y - lastY;
-      lastX = p.x;
-      lastY = p.y;
-      this.clamp();
+      if (!mode) {
+        this.canvas.style.cursor = cursorFor(this.hitTest(p));
+        return;
+      }
+      if (mode === "move") {
+        this.sel.x = Math.min(Math.max(startSel.x + (p.x - start.x), 0), this.canvas.width - this.sel.w);
+        this.sel.y = Math.min(Math.max(startSel.y + (p.y - start.y), 0), this.canvas.height - this.sel.h);
+      } else {
+        this.sel = this.ratioRect(anchor.x, anchor.y, p.x, p.y);
+      }
       this.draw();
       this.scheduleUpdate();
     });
 
-    const endDrag = () => { dragging = false; };
+    const endDrag = () => { mode = null; };
     this.canvas.addEventListener("pointerup", endDrag);
     this.canvas.addEventListener("pointercancel", endDrag);
-
-    this.canvas.addEventListener("wheel", (e) => {
-      if (!this.img) return;
-      e.preventDefault();
-      const p = toCanvas(e);
-      const factor = Math.pow(1.0015, -e.deltaY);
-      this.zoomTo(this.scale * factor, p.x, p.y);
-    }, { passive: false });
-
-    this.zoom.addEventListener("input", () => {
-      if (!this.img) return;
-      this.zoomTo(parseFloat(this.zoom.value), this.canvas.width / 2, this.canvas.height / 2);
-    });
-  }
-
-  zoomTo(newScale, cx, cy) {
-    newScale = Math.min(Math.max(newScale, this.minScale), this.minScale * 4);
-    const ratio = newScale / this.scale;
-    this.offsetX = cx - (cx - this.offsetX) * ratio;
-    this.offsetY = cy - (cy - this.offsetY) * ratio;
-    this.scale = newScale;
-    this.zoom.value = newScale;
-    this.clamp();
-    this.draw();
-    this.scheduleUpdate();
-  }
-
-  clamp() {
-    const fw = this.canvas.width, fh = this.canvas.height;
-    const iw = this.img.width * this.scale;
-    const ih = this.img.height * this.scale;
-    this.offsetX = Math.min(0, Math.max(fw - iw, this.offsetX));
-    this.offsetY = Math.min(0, Math.max(fh - ih, this.offsetY));
   }
 
   draw() {
-    const { ctx, canvas, img } = this;
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const { ctx, canvas, img, sel } = this;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(img, this.offsetX, this.offsetY, img.width * this.scale, img.height * this.scale);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    // dim everything outside the selection
+    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.fillRect(0, 0, canvas.width, sel.y);
+    ctx.fillRect(0, sel.y + sel.h, canvas.width, canvas.height - sel.y - sel.h);
+    ctx.fillRect(0, sel.y, sel.x, sel.h);
+    ctx.fillRect(sel.x + sel.w, sel.y, canvas.width - sel.x - sel.w, sel.h);
+
+    // marching-ants style border: dark base + white dashes
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.setLineDash([]);
+    ctx.strokeRect(sel.x + 0.5, sel.y + 0.5, sel.w - 1, sel.h - 1);
+    ctx.strokeStyle = "#fff";
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(sel.x + 0.5, sel.y + 0.5, sel.w - 1, sel.h - 1);
+    ctx.setLineDash([]);
+
+    // corner handles
+    const c = this.corners();
+    for (const key of ["tl", "tr", "bl", "br"]) {
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(c[key].x - 4, c[key].y - 4, 8, 8);
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.strokeRect(c[key].x - 3.5, c[key].y - 3.5, 7, 7);
+    }
   }
 
   /* ---------- output ---------- */
@@ -235,11 +286,11 @@ class ResizeTool {
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, out.width, out.height);
 
-    // map the crop frame back to source-image pixels
-    const sx = -this.offsetX / this.scale;
-    const sy = -this.offsetY / this.scale;
-    const sw = this.canvas.width / this.scale;
-    const sh = this.canvas.height / this.scale;
+    // map the selection back to source-image pixels
+    const sx = this.sel.x / this.dispScale;
+    const sy = this.sel.y / this.dispScale;
+    const sw = this.sel.w / this.dispScale;
+    const sh = this.sel.h / this.dispScale;
     drawScaled(ctx, this.img, sx, sy, sw, sh, 0, 0, this.targetW, this.imageAreaH);
 
     if (this.hasBand) this.drawBand(ctx);
@@ -290,7 +341,6 @@ class ResizeTool {
     if (this.blobUrl) URL.revokeObjectURL(this.blobUrl);
     this.blobUrl = URL.createObjectURL(blob);
     this.preview.src = this.blobUrl;
-    this.previewActual.src = this.blobUrl;
 
     const kb = (blob.size / 1024).toFixed(1);
     const ok = blob.size <= 30 * 1024;
@@ -340,15 +390,8 @@ photoTool.checkBlocked = () => {
 photoDate.max = new Date().toISOString().slice(0, 10);
 
 function checkPhotoDate() {
-  if (!photoDate.value) { photoDateWarn.hidden = true; return; }
-  const taken = new Date(photoDate.value);
-  const now = new Date();
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
-  if (taken > now) {
+  if (photoDate.value && new Date(photoDate.value) > new Date()) {
     photoDateWarn.textContent = "That date is in the future — please check it.";
-    photoDateWarn.hidden = false;
-  } else if (taken < sixMonthsAgo) {
-    photoDateWarn.textContent = "Kerala PSC requires a photo taken within the last 6 months. This date is older.";
     photoDateWarn.hidden = false;
   } else {
     photoDateWarn.hidden = true;

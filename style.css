@@ -111,28 +111,15 @@ main { max-width: 980px; margin: 0 auto; padding: 0 16px 32px; }
 
 /* ---------- Cropper ---------- */
 .crop-canvas {
-  width: 100%;
-  max-width: 300px;
+  max-width: 100%;
   display: block;
-  border: 2px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 4px;
   background: #eee;
   touch-action: none;
-  cursor: grab;
+  cursor: crosshair;
+  margin-bottom: 10px;
 }
-
-.crop-canvas:active { cursor: grabbing; }
-
-.zoom-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 300px;
-  margin: 10px 0;
-}
-
-.zoom-label { font-size: 0.85rem; color: var(--muted); }
-.zoom-row input[type="range"] { flex: 1; accent-color: var(--accent); }
 
 /* ---------- Detail inputs ---------- */
 .detail-col label {
@@ -161,14 +148,6 @@ main { max-width: 980px; margin: 0 auto; padding: 0 16px 32px; }
 
 /* ---------- Preview ---------- */
 .preview-box { margin-bottom: 10px; }
-
-.preview-2x {
-  display: block;
-  border: 1px solid var(--border);
-  background: #fafafa;
-  max-width: 100%;
-  height: auto;
-}
 
 .preview-caption { font-size: 0.75rem; color: var(--muted); margin: 6px 0; }
 
@@ -226,6 +205,7 @@ main { max-width: 980px; margin: 0 auto; padding: 0 16px 32px; }
 }
 
 .checklist h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--accent-dark); }
+.rules-link { font-size: 0.8rem; font-weight: 400; color: var(--accent); }
 .checklist ul { margin: 0; padding-left: 20px; font-size: 0.88rem; }
 .checklist li { margin: 3px 0; }
 

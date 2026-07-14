@@ -41,13 +41,9 @@
       <div class="editor-grid">
 
         <div class="crop-col">
-          <h2>1. Position your photo</h2>
-          <p class="help">Drag to move &middot; scroll or use the slider to zoom. Keep head, ears and shoulders inside the frame.</p>
-          <canvas class="crop-canvas" id="photo-canvas" width="300" height="330"></canvas>
-          <div class="zoom-row">
-            <span class="zoom-label">Zoom</span>
-            <input type="range" id="photo-zoom" min="1" max="4" step="0.01" value="1">
-          </div>
+          <h2>1. Select the crop area</h2>
+          <p class="help">The selection is centered by default. Drag it to move &middot; drag a corner to resize &middot; drag on the image to draw a new selection.</p>
+          <canvas class="crop-canvas" id="photo-canvas" width="360" height="420"></canvas>
           <button class="btn ghost" id="photo-change" type="button">Choose a different photo</button>
           <p class="warn" id="photo-imgwarn" hidden></p>
         </div>
@@ -59,15 +55,15 @@
           <input type="text" id="photo-name" maxlength="40" placeholder="e.g. ARJUN K NAIR" autocomplete="name">
           <label for="photo-date">Date photo was taken</label>
           <input type="date" id="photo-date">
+          <p class="help">The photo is valid for 10 years from the date it was taken.</p>
           <p class="warn" id="photo-datewarn" hidden></p>
         </div>
 
         <div class="preview-col">
           <h2>3. Preview &amp; download</h2>
           <div class="preview-box">
-            <img id="photo-preview" class="preview-2x" alt="Final photograph preview" width="300" height="400">
-            <p class="preview-caption">Shown at 2&times; &mdash; actual size below</p>
-            <img id="photo-preview-actual" class="preview-actual" alt="Actual size preview" width="150" height="200">
+            <img id="photo-preview" class="preview-actual" alt="Final photograph preview (actual size)" width="150" height="200">
+            <p class="preview-caption">Actual size (150&times;200 px)</p>
           </div>
           <p class="size-info" id="photo-size">&nbsp;</p>
           <a class="btn primary disabled" id="photo-download" download="photo-psc.jpg">Download photo-psc.jpg</a>
@@ -78,13 +74,15 @@
     </div>
 
     <aside class="checklist">
-      <h3>Kerala PSC photograph rules</h3>
+      <h3>Kerala PSC photograph rules <a class="rules-link" href="https://www.keralapsc.gov.in/sites/default/files/inline-files/photo_0.pdf" target="_blank" rel="noopener">(official PDF)</a></h3>
       <ul>
         <li>Exactly <strong>150 &times; 200 pixels</strong>, JPG format, <strong>30 KB or less</strong></li>
-        <li>Name and date of photo printed in <strong>black on a white strip</strong> at the bottom (this tool adds it)</li>
-        <li>Taken within the <strong>last 6 months</strong></li>
-        <li>Light / white background; face, both ears and shoulders clearly visible</li>
-        <li>No caps, dark glasses or heavy shadows</li>
+        <li>Candidate's <strong>name and date of photo</strong> printed on the photograph &mdash; mandatory (this tool adds it)</li>
+        <li>The photo is <strong>valid for 10 years</strong> from the date it was taken</li>
+        <li>Colour or black &amp; white; <strong>face and shoulders</strong> clearly visible</li>
+        <li>White or light-coloured background</li>
+        <li>Face straight and fully centered; <strong>eyes clearly visible</strong></li>
+        <li>No caps or goggles (religious headwear allowed); no side-profile or unclear face</li>
       </ul>
     </aside>
   </section>
@@ -105,13 +103,9 @@
       <div class="editor-grid">
 
         <div class="crop-col">
-          <h2>1. Position your signature</h2>
-          <p class="help">Drag to move &middot; scroll or use the slider to zoom. Fit the signature snugly inside the frame.</p>
-          <canvas class="crop-canvas" id="sign-canvas" width="300" height="200"></canvas>
-          <div class="zoom-row">
-            <span class="zoom-label">Zoom</span>
-            <input type="range" id="sign-zoom" min="1" max="4" step="0.01" value="1">
-          </div>
+          <h2>1. Select the crop area</h2>
+          <p class="help">The selection is centered by default. Drag it to move &middot; drag a corner to resize &middot; drag on the image to draw a new selection. Fit the signature snugly.</p>
+          <canvas class="crop-canvas" id="sign-canvas" width="360" height="240"></canvas>
           <button class="btn ghost" id="sign-change" type="button">Choose a different image</button>
           <p class="warn" id="sign-imgwarn" hidden></p>
         </div>
@@ -119,9 +113,8 @@
         <div class="preview-col">
           <h2>2. Preview &amp; download</h2>
           <div class="preview-box">
-            <img id="sign-preview" class="preview-2x" alt="Final signature preview" width="300" height="200">
-            <p class="preview-caption">Shown at 2&times; &mdash; actual size below</p>
-            <img id="sign-preview-actual" class="preview-actual" alt="Actual size preview" width="150" height="100">
+            <img id="sign-preview" class="preview-actual" alt="Final signature preview (actual size)" width="150" height="100">
+            <p class="preview-caption">Actual size (150&times;100 px)</p>
           </div>
           <p class="size-info" id="sign-size">&nbsp;</p>
           <a class="btn primary disabled" id="sign-download" download="signature-psc.jpg">Download signature-psc.jpg</a>
