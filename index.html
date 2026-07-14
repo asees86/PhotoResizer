@@ -19,7 +19,7 @@
     Photograph <span class="spec">150&times;200 px &middot; &le;30 KB</span>
   </button>
   <button class="tab" id="tab-sign" role="tab" aria-selected="false" data-target="panel-sign">
-    Signature <span class="spec">150&times;100 px &middot; &le;30 KB</span>
+    Signature <span class="spec">150&times;100 px &middot; &lt;20 KB</span>
   </button>
 </nav>
 
@@ -42,7 +42,7 @@
 
         <div class="crop-col">
           <h2>1. Select the crop area</h2>
-          <p class="help">The selection is centered by default. Drag it to move &middot; drag a corner to resize &middot; drag on the image to draw a new selection.</p>
+          <p class="help">The selection is centered by default. Drag it to move &middot; drag a corner to resize &middot; drag on the image to draw a new selection. Position the face/head inside the pink squares.</p>
           <canvas class="crop-canvas" id="photo-canvas" width="360" height="420"></canvas>
           <button class="btn ghost" id="photo-change" type="button">Choose a different photo</button>
           <p class="warn" id="photo-imgwarn" hidden></p>
@@ -52,11 +52,15 @@
           <h2>2. Name &amp; date taken</h2>
           <p class="help">Kerala PSC requires your name and the date the photo was taken printed at the bottom of the photograph.</p>
           <label for="photo-name">Candidate name</label>
-          <input type="text" id="photo-name" maxlength="40" placeholder="e.g. ARJUN K NAIR" autocomplete="name">
+          <input type="text" id="photo-name" maxlength="40" value="NAME" placeholder="e.g. ARJUN K NAIR" autocomplete="name">
           <label for="photo-date">Date photo was taken</label>
           <input type="date" id="photo-date">
-          <p class="help">The photo is valid for 10 years from the date it was taken.</p>
+          <p class="help">The photo must have been taken within the last 6 months.</p>
           <p class="warn" id="photo-datewarn" hidden></p>
+          <label for="photo-namesize">Name font size &middot; <span id="photo-namesize-val">12</span> px</label>
+          <input type="range" id="photo-namesize" min="9" max="16" step="1" value="12">
+          <label for="photo-datesize">Date font size &middot; <span id="photo-datesize-val">10</span> px</label>
+          <input type="range" id="photo-datesize" min="8" max="13" step="1" value="10">
         </div>
 
         <div class="preview-col">
@@ -78,7 +82,7 @@
       <ul>
         <li>Exactly <strong>150 &times; 200 pixels</strong>, JPG format, <strong>30 KB or less</strong></li>
         <li>Candidate's <strong>name and date of photo</strong> printed on the photograph &mdash; mandatory (this tool adds it)</li>
-        <li>The photo is <strong>valid for 10 years</strong> from the date it was taken</li>
+        <li>The photo must have been <strong>taken within the last 6 months</strong></li>
         <li>Colour or black &amp; white; <strong>face and shoulders</strong> clearly visible</li>
         <li>White or light-coloured background</li>
         <li>Face straight and fully centered; <strong>eyes clearly visible</strong></li>
@@ -126,7 +130,7 @@
     <aside class="checklist">
       <h3>Kerala PSC signature rules</h3>
       <ul>
-        <li>Exactly <strong>150 &times; 100 pixels</strong>, JPG format, <strong>30 KB or less</strong></li>
+        <li>Exactly <strong>150 &times; 100 pixels</strong>, JPG format, <strong>less than 20 KB</strong></li>
         <li>Signed in <strong>black or blue ink</strong> on plain white paper</li>
         <li>Signature only &mdash; no other text or marks in the image</li>
       </ul>

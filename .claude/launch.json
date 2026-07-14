@@ -4,8 +4,9 @@
     {
       "name": "photoresizer",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8734"],
-      "port": 8734
+      "runtimeArgs": ["-m", "http.server", "8741"],
+      "port": 8741,
+      "autoPort": false
     }
   ]
 }

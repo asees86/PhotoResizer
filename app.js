@@ -1,22 +1,36 @@
 "use strict";
 
-const MAX_BYTES = 29 * 1024;  // stay safely under the 30 KB limit
 const BAND_HEIGHT = 35;       // white strip for name + date on the photo
 const DISPLAY_MAX_W = 360;    // crop canvas display box
 const DISPLAY_MAX_H = 420;
 const MIN_SEL_W = 40;         // smallest allowed selection width (canvas px)
 const HANDLE_HIT = 14;        // corner handle hit radius (canvas px)
 
-/* Convert a canvas to a JPEG blob no larger than maxBytes at the highest
-   quality that fits. At 150 px wide, quality 1.0 almost always fits, so
-   most photos get no visible compression at all. */
+/* Stamp 300 DPI into the JFIF APP0 header of a canvas-produced JPEG.
+   Metadata only — pixel data and byte length are unchanged. */
+async function withDpi300(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  const isJfif =
+    buf[2] === 0xff && buf[3] === 0xe0 &&
+    buf[6] === 0x4a && buf[7] === 0x46 && buf[8] === 0x49 &&
+    buf[9] === 0x46 && buf[10] === 0x00;
+  if (!isJfif) return blob;
+  buf[13] = 1;                            // density units: dots per inch
+  buf[14] = 300 >> 8; buf[15] = 300 & 0xff; // X density
+  buf[16] = 300 >> 8; buf[17] = 300 & 0xff; // Y density
+  return new Blob([buf], { type: "image/jpeg" });
+}
+
+/* Convert a canvas to a 300 DPI JPEG blob no larger than maxBytes at the
+   highest quality that fits. At 150 px wide, quality 1.0 almost always fits,
+   so most photos get no visible compression at all. */
 async function toJpegUnder(canvas, maxBytes) {
   let blob = null;
   for (let q = 1.0; q >= 0.35; q -= 0.02) {
     blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", q));
-    if (blob && blob.size <= maxBytes) return blob;
+    if (blob && blob.size <= maxBytes) return withDpi300(blob);
   }
-  return blob;
+  return blob ? withDpi300(blob) : blob;
 }
 
 /* Draw a crop of img scaled down to dw x dh, halving in steps so the
@@ -46,7 +60,8 @@ function formatDate(isoDate) {
 }
 
 class ResizeTool {
-  /* opts: prefix, targetW, targetH, imageAreaH, hasBand */
+  /* opts: prefix, targetW, targetH, imageAreaH, hasBand, maxBytes, limitKB,
+     showFaceGuides */
   constructor(opts) {
     Object.assign(this, opts);
     this.ratio = this.targetW / this.imageAreaH; // selection w/h
@@ -275,6 +290,17 @@ class ResizeTool {
       ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
       ctx.strokeRect(c[key].x - 3.5, c[key].y - 3.5, 7, 7);
     }
+
+    // head-position guides (official sample): two pink squares, upper-center
+    // of the selection. Drawn on the crop canvas only, never exported.
+    if (this.showFaceGuides) {
+      ctx.strokeStyle = "#f9a8d4";
+      ctx.lineWidth = 1;
+      const outer = sel.w * 0.55;
+      const inner = sel.w * 0.36;
+      ctx.strokeRect(sel.x + (sel.w - outer) / 2, sel.y + sel.h * 0.20, outer, outer);
+      ctx.strokeRect(sel.x + (sel.w - inner) / 2, sel.y + sel.h * 0.28, inner, inner);
+    }
   }
 
   /* ---------- output ---------- */
@@ -307,19 +333,21 @@ class ResizeTool {
 
     const name = (this.getName ? this.getName() : "").trim().toUpperCase();
     const date = this.getDate ? this.getDate() : "";
+    const nameSize = this.getNameSize ? this.getNameSize() : 12;
+    const dateSize = this.getDateSize ? this.getDateSize() : 10;
 
     if (name) {
-      let size = 12;
+      let size = nameSize;
       ctx.font = `bold ${size}px Arial, sans-serif`;
       while (ctx.measureText(name).width > this.targetW - 6 && size > 6) {
         size--;
         ctx.font = `bold ${size}px Arial, sans-serif`;
       }
-      ctx.fillText(name, this.targetW / 2, top + 11);
+      ctx.fillText(name, this.targetW / 2, top + 2 + nameSize / 2);
     }
     if (date) {
-      ctx.font = "10px Arial, sans-serif";
-      ctx.fillText(formatDate(date), this.targetW / 2, top + 25);
+      ctx.font = `${dateSize}px Arial, sans-serif`;
+      ctx.fillText(formatDate(date), this.targetW / 2, top + BAND_HEIGHT - 3 - dateSize / 2);
     }
   }
 
@@ -335,7 +363,7 @@ class ResizeTool {
     const blocked = this.checkBlocked ? this.checkBlocked() : false;
 
     const canvas = this.compose();
-    const blob = await toJpegUnder(canvas, MAX_BYTES);
+    const blob = await toJpegUnder(canvas, this.maxBytes);
     if (seq !== this.renderSeq) return; // a newer render superseded this one
 
     if (this.blobUrl) URL.revokeObjectURL(this.blobUrl);
@@ -343,9 +371,9 @@ class ResizeTool {
     this.preview.src = this.blobUrl;
 
     const kb = (blob.size / 1024).toFixed(1);
-    const ok = blob.size <= 30 * 1024;
+    const ok = blob.size < this.limitKB * 1024;
     this.sizeInfo.textContent =
-      `${this.targetW}×${this.targetH} px · ${kb} KB ${ok ? "✓ within 30 KB limit" : "✗ over 30 KB!"}`;
+      `${this.targetW}×${this.targetH} px · ${kb} KB ${ok ? `✓ within ${this.limitKB} KB limit` : `✗ over ${this.limitKB} KB!`}`;
     this.sizeInfo.className = `size-info ${ok ? "ok" : "bad"}`;
 
     if (blocked || !ok) {
@@ -365,21 +393,36 @@ const photoTool = new ResizeTool({
   targetH: 200,
   imageAreaH: 200 - BAND_HEIGHT,
   hasBand: true,
+  maxBytes: 29 * 1024, // compression target, safely under the 30 KB limit
+  limitKB: 30,
+  showFaceGuides: true,
 });
 
 const photoName = document.getElementById("photo-name");
 const photoDate = document.getElementById("photo-date");
 const photoDateWarn = document.getElementById("photo-datewarn");
 const photoBlocker = document.getElementById("photo-blocker");
+const photoNameSize = document.getElementById("photo-namesize");
+const photoNameSizeVal = document.getElementById("photo-namesize-val");
+const photoDateSize = document.getElementById("photo-datesize");
+const photoDateSizeVal = document.getElementById("photo-datesize-val");
 
 photoTool.getName = () => photoName.value;
 photoTool.getDate = () => photoDate.value;
+photoTool.getNameSize = () => Number(photoNameSize.value);
+photoTool.getDateSize = () => Number(photoDateSize.value);
+
 photoTool.checkBlocked = () => {
-  const missing = [];
-  if (!photoName.value.trim()) missing.push("name");
-  if (!photoDate.value) missing.push("date taken");
-  if (missing.length) {
-    photoBlocker.textContent = `Enter your ${missing.join(" and ")} to enable download — Kerala PSC rejects photos without them.`;
+  const name = photoName.value.trim();
+  const problems = [];
+  if (!name) problems.push("enter your name");
+  else if (name.toUpperCase() === "NAME") problems.push('replace "NAME" with your actual name');
+  if (!photoDate.value) problems.push("enter the date the photo was taken");
+  else if (photoDate.value > photoDate.max || photoDate.value < photoDate.min)
+    problems.push("use a date within the last 6 months");
+  if (problems.length) {
+    photoBlocker.textContent =
+      `To enable download: ${problems.join("; ")} — Kerala PSC rejects photos otherwise.`;
     photoBlocker.hidden = false;
     return true;
   }
@@ -387,11 +430,26 @@ photoTool.checkBlocked = () => {
   return false;
 };
 
-photoDate.max = new Date().toISOString().slice(0, 10);
+/* Local-timezone YYYY-MM-DD (toISOString would use UTC and can be a day off) */
+function isoLocal(d) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+const today = new Date();
+const sixMonthsAgo = new Date();
+sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+photoDate.max = isoLocal(today);
+photoDate.min = isoLocal(sixMonthsAgo);
+photoDate.value = isoLocal(today); // default: today
 
 function checkPhotoDate() {
-  if (photoDate.value && new Date(photoDate.value) > new Date()) {
+  if (photoDate.value && photoDate.value > photoDate.max) {
     photoDateWarn.textContent = "That date is in the future — please check it.";
+    photoDateWarn.hidden = false;
+  } else if (photoDate.value && photoDate.value < photoDate.min) {
+    photoDateWarn.textContent = "The photo must have been taken within the last 6 months.";
     photoDateWarn.hidden = false;
   } else {
     photoDateWarn.hidden = true;
@@ -403,6 +461,14 @@ photoDate.addEventListener("input", () => {
   checkPhotoDate();
   photoTool.scheduleUpdate();
 });
+photoNameSize.addEventListener("input", () => {
+  photoNameSizeVal.textContent = photoNameSize.value;
+  photoTool.scheduleUpdate();
+});
+photoDateSize.addEventListener("input", () => {
+  photoDateSizeVal.textContent = photoDateSize.value;
+  photoTool.scheduleUpdate();
+});
 
 /* ---------- Signature tool ---------- */
 new ResizeTool({
@@ -411,6 +477,9 @@ new ResizeTool({
   targetH: 100,
   imageAreaH: 100,
   hasBand: false,
+  maxBytes: 19 * 1024, // compression target, safely under the 20 KB limit
+  limitKB: 20,
+  showFaceGuides: false,
 });
 
 /* ---------- Tabs ---------- */
