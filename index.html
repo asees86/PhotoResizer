@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kerala PSC Photo & Signature Resizer</title>
+<meta name="description" content="Free online tool to resize photograph (150x200px, 30KB, with name & date) and signature (150x100px, 30KB) for Kerala PSC Thulasi profile. Works fully in your browser.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>Kerala PSC Photo &amp; Signature Resizer</h1>
+  <p class="tagline">Resize your photograph and signature to the exact Kerala PSC Thulasi specifications &mdash; entirely in your browser. Nothing is uploaded to any server.</p>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" id="tab-photo" role="tab" aria-selected="true" data-target="panel-photo">
+    Photograph <span class="spec">150&times;200 px &middot; &le;30 KB</span>
+  </button>
+  <button class="tab" id="tab-sign" role="tab" aria-selected="false" data-target="panel-sign">
+    Signature <span class="spec">150&times;100 px &middot; &le;30 KB</span>
+  </button>
+</nav>
+
+<main>
+
+  <!-- ============ PHOTOGRAPH ============ -->
+  <section class="panel active" id="panel-photo" role="tabpanel">
+
+    <div class="dropzone" id="photo-drop" tabindex="0">
+      <div class="dz-inner">
+        <div class="dz-icon">&#128247;</div>
+        <p><strong>Click to choose your photograph</strong> or drag &amp; drop it here</p>
+        <p class="dz-hint">JPG or PNG &middot; A recent passport-style photo with a light background</p>
+      </div>
+      <input type="file" id="photo-file" accept="image/*" hidden>
+    </div>
+
+    <div class="editor" id="photo-editor" hidden>
+      <div class="editor-grid">
+
+        <div class="crop-col">
+          <h2>1. Position your photo</h2>
+          <p class="help">Drag to move &middot; scroll or use the slider to zoom. Keep head, ears and shoulders inside the frame.</p>
+          <canvas class="crop-canvas" id="photo-canvas" width="300" height="330"></canvas>
+          <div class="zoom-row">
+            <span class="zoom-label">Zoom</span>
+            <input type="range" id="photo-zoom" min="1" max="4" step="0.01" value="1">
+          </div>
+          <button class="btn ghost" id="photo-change" type="button">Choose a different photo</button>
+          <p class="warn" id="photo-imgwarn" hidden></p>
+        </div>
+
+        <div class="detail-col">
+          <h2>2. Name &amp; date taken</h2>
+          <p class="help">Kerala PSC requires your name and the date the photo was taken printed at the bottom of the photograph.</p>
+          <label for="photo-name">Candidate name</label>
+          <input type="text" id="photo-name" maxlength="40" placeholder="e.g. ARJUN K NAIR" autocomplete="name">
+          <label for="photo-date">Date photo was taken</label>
+          <input type="date" id="photo-date">
+          <p class="warn" id="photo-datewarn" hidden></p>
+        </div>
+
+        <div class="preview-col">
+          <h2>3. Preview &amp; download</h2>
+          <div class="preview-box">
+            <img id="photo-preview" class="preview-2x" alt="Final photograph preview" width="300" height="400">
+            <p class="preview-caption">Shown at 2&times; &mdash; actual size below</p>
+            <img id="photo-preview-actual" class="preview-actual" alt="Actual size preview" width="150" height="200">
+          </div>
+          <p class="size-info" id="photo-size">&nbsp;</p>
+          <a class="btn primary disabled" id="photo-download" download="photo-psc.jpg">Download photo-psc.jpg</a>
+          <p class="warn" id="photo-blocker" hidden></p>
+        </div>
+
+      </div>
+    </div>
+
+    <aside class="checklist">
+      <h3>Kerala PSC photograph rules</h3>
+      <ul>
+        <li>Exactly <strong>150 &times; 200 pixels</strong>, JPG format, <strong>30 KB or less</strong></li>
+        <li>Name and date of photo printed in <strong>black on a white strip</strong> at the bottom (this tool adds it)</li>
+        <li>Taken within the <strong>last 6 months</strong></li>
+        <li>Light / white background; face, both ears and shoulders clearly visible</li>
+        <li>No caps, dark glasses or heavy shadows</li>
+      </ul>
+    </aside>
+  </section>
+
+  <!-- ============ SIGNATURE ============ -->
+  <section class="panel" id="panel-sign" role="tabpanel">
+
+    <div class="dropzone" id="sign-drop" tabindex="0">
+      <div class="dz-inner">
+        <div class="dz-icon">&#9997;&#65039;</div>
+        <p><strong>Click to choose your signature image</strong> or drag &amp; drop it here</p>
+        <p class="dz-hint">JPG or PNG &middot; Sign in black or blue ink on white paper, then photograph or scan it</p>
+      </div>
+      <input type="file" id="sign-file" accept="image/*" hidden>
+    </div>
+
+    <div class="editor" id="sign-editor" hidden>
+      <div class="editor-grid">
+
+        <div class="crop-col">
+          <h2>1. Position your signature</h2>
+          <p class="help">Drag to move &middot; scroll or use the slider to zoom. Fit the signature snugly inside the frame.</p>
+          <canvas class="crop-canvas" id="sign-canvas" width="300" height="200"></canvas>
+          <div class="zoom-row">
+            <span class="zoom-label">Zoom</span>
+            <input type="range" id="sign-zoom" min="1" max="4" step="0.01" value="1">
+          </div>
+          <button class="btn ghost" id="sign-change" type="button">Choose a different image</button>
+          <p class="warn" id="sign-imgwarn" hidden></p>
+        </div>
+
+        <div class="preview-col">
+          <h2>2. Preview &amp; download</h2>
+          <div class="preview-box">
+            <img id="sign-preview" class="preview-2x" alt="Final signature preview" width="300" height="200">
+            <p class="preview-caption">Shown at 2&times; &mdash; actual size below</p>
+            <img id="sign-preview-actual" class="preview-actual" alt="Actual size preview" width="150" height="100">
+          </div>
+          <p class="size-info" id="sign-size">&nbsp;</p>
+          <a class="btn primary disabled" id="sign-download" download="signature-psc.jpg">Download signature-psc.jpg</a>
+        </div>
+
+      </div>
+    </div>
+
+    <aside class="checklist">
+      <h3>Kerala PSC signature rules</h3>
+      <ul>
+        <li>Exactly <strong>150 &times; 100 pixels</strong>, JPG format, <strong>30 KB or less</strong></li>
+        <li>Signed in <strong>black or blue ink</strong> on plain white paper</li>
+        <li>Signature only &mdash; no other text or marks in the image</li>
+      </ul>
+    </aside>
+  </section>
+
+</main>
+
+<footer>
+  <p>This is a free helper tool and is <strong>not affiliated with Kerala PSC</strong>. Always verify the final image in your Thulasi profile. Images never leave your device.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
