@@ -4,7 +4,8 @@ const BAND_HEIGHT = 35;       // white strip for name + date on the photo
 const DISPLAY_MAX_W = 360;    // crop canvas display box
 const DISPLAY_MAX_H = 420;
 const MIN_SEL_W = 40;         // smallest allowed selection width (canvas px)
-const HANDLE_HIT = 14;        // corner handle hit radius (canvas px)
+const HIT_CSS_TOUCH = 24;     // corner hit radius for touch/pen (CSS px)
+const HIT_CSS_MOUSE = 12;     // corner hit radius for mouse (CSS px)
 
 /* Stamp 300 DPI into the JFIF APP0 header of a canvas-produced JPEG.
    Metadata only — pixel data and byte length are unchanged. */
@@ -80,9 +81,12 @@ class ResizeTool {
     this.img = null;
     this.sel = { x: 0, y: 0, w: 0, h: 0 }; // selection in canvas px
     this.dispScale = 1;                     // canvas px per source-image px
+    this.pxPerCss = 1;                      // canvas px per displayed CSS px
     this.blobUrl = null;
     this.updateTimer = null;
     this.renderSeq = 0;
+    this.imgSeq = 0;       // invalidates pending auto-select on new image
+    this.selDirty = false; // user touched the selection; auto-select must not stomp it
 
     this.bindUpload();
     this.bindCropper();
@@ -142,11 +146,13 @@ class ResizeTool {
     this.canvas.width = Math.max(1, Math.round(img.width * this.dispScale));
     this.canvas.height = Math.max(1, Math.round(img.height * this.dispScale));
 
-    // default: largest centered selection with the required ratio
+    // default: centered selection at 80% of the largest ratio-locked fit —
+    // this is also the silent fallback when auto-detection finds nothing
     const cw = this.canvas.width, ch = this.canvas.height;
-    let w = Math.min(cw, ch * this.ratio);
+    let w = 0.8 * Math.min(cw, ch * this.ratio);
     let h = w / this.ratio;
     this.sel = { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
+    this.refreshScale();
 
     if (img.width < this.targetW || img.height < this.imageAreaH) {
       this.imgWarn.textContent =
@@ -159,6 +165,33 @@ class ResizeTool {
 
     this.draw();
     this.scheduleUpdate();
+    this.selDirty = false;
+    this.runAutoSelect();
+  }
+
+  refreshScale() {
+    const r = this.canvas.getBoundingClientRect();
+    if (r.width > 0) this.pxPerCss = this.canvas.width / r.width;
+  }
+
+  /* Reposition the selection via face/signature detection. Runs after the
+     default selection has painted; keeps it silently on failure. */
+  runAutoSelect() {
+    if (!this.autoSelect || !window.AutoSelect) return;
+    const seq = ++this.imgSeq;
+    setTimeout(() => {
+      if (seq !== this.imgSeq || this.selDirty) return;
+      let sel = null;
+      try {
+        sel = this.autoSelect === "face"
+          ? AutoSelect.detectFaceSelection(this.img, this.ratio, this.canvas.width, this.canvas.height)
+          : AutoSelect.detectSignatureSelection(this.img, this.ratio, this.canvas.width, this.canvas.height);
+      } catch (_) { /* fall back to the default selection */ }
+      if (seq !== this.imgSeq || this.selDirty || !sel) return;
+      this.sel = sel;
+      this.draw();
+      this.scheduleUpdate();
+    }, 30);
   }
 
   /* ---------- selection cropper ---------- */
@@ -172,13 +205,21 @@ class ResizeTool {
     };
   }
 
-  hitTest(p) {
+  hitTest(p, pointerType) {
+    // hit radius is defined in CSS px (what the finger actually covers) and
+    // converted to canvas px, so targets stay big on phones where the canvas
+    // is displayed smaller than its pixel size
+    const cssR = pointerType === "mouse" ? HIT_CSS_MOUSE : HIT_CSS_TOUCH;
+    const radius = cssR * this.pxPerCss;
     const c = this.corners();
+    // nearest corner within the radius wins — with a touch-sized radius on a
+    // small selection several corners can overlap one tap
+    let best = null, bestD = Infinity;
     for (const key of ["tl", "tr", "bl", "br"]) {
-      if (Math.abs(p.x - c[key].x) <= HANDLE_HIT && Math.abs(p.y - c[key].y) <= HANDLE_HIT) {
-        return key;
-      }
+      const d = Math.hypot(p.x - c[key].x, p.y - c[key].y);
+      if (d <= radius && d < bestD) { best = key; bestD = d; }
     }
+    if (best) return best;
     const s = this.sel;
     if (p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h) return "move";
     return "draw";
@@ -206,6 +247,7 @@ class ResizeTool {
 
     const toCanvas = (e) => {
       const r = this.canvas.getBoundingClientRect();
+      if (r.width > 0) this.pxPerCss = this.canvas.width / r.width;
       return {
         x: (e.clientX - r.left) * (this.canvas.width / r.width),
         y: (e.clientY - r.top) * (this.canvas.height / r.height),
@@ -222,8 +264,9 @@ class ResizeTool {
     this.canvas.addEventListener("pointerdown", (e) => {
       if (!this.img) return;
       e.preventDefault();
+      this.selDirty = true; // a user drag always beats a pending auto-select
       const p = toCanvas(e);
-      const hit = this.hitTest(p);
+      const hit = this.hitTest(p, e.pointerType);
       mode = hit;
       start = p;
       startSel = { ...this.sel };
@@ -241,7 +284,7 @@ class ResizeTool {
       if (!this.img) return;
       const p = toCanvas(e);
       if (!mode) {
-        this.canvas.style.cursor = cursorFor(this.hitTest(p));
+        this.canvas.style.cursor = cursorFor(this.hitTest(p, e.pointerType));
         return;
       }
       if (mode === "move") {
@@ -282,13 +325,15 @@ class ResizeTool {
     ctx.strokeRect(sel.x + 0.5, sel.y + 0.5, sel.w - 1, sel.h - 1);
     ctx.setLineDash([]);
 
-    // corner handles
+    // corner handles — scale with the display so they stay ~9 CSS px on
+    // phones where the canvas is shown smaller than its pixel size
+    const hs = Math.max(8, Math.round(9 * this.pxPerCss));
     const c = this.corners();
     for (const key of ["tl", "tr", "bl", "br"]) {
       ctx.fillStyle = "#fff";
-      ctx.fillRect(c[key].x - 4, c[key].y - 4, 8, 8);
+      ctx.fillRect(c[key].x - hs / 2, c[key].y - hs / 2, hs, hs);
       ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-      ctx.strokeRect(c[key].x - 3.5, c[key].y - 3.5, 7, 7);
+      ctx.strokeRect(c[key].x - hs / 2 + 0.5, c[key].y - hs / 2 + 0.5, hs - 1, hs - 1);
     }
 
     // head-position guides (official sample): two pink squares, upper-center
@@ -396,6 +441,7 @@ const photoTool = new ResizeTool({
   maxBytes: 29 * 1024, // compression target, safely under the 30 KB limit
   limitKB: 30,
   showFaceGuides: true,
+  autoSelect: "face",
 });
 
 const photoName = document.getElementById("photo-name");
@@ -471,7 +517,7 @@ photoDateSize.addEventListener("input", () => {
 });
 
 /* ---------- Signature tool ---------- */
-new ResizeTool({
+const signTool = new ResizeTool({
   prefix: "sign",
   targetW: 150,
   targetH: 100,
@@ -480,6 +526,15 @@ new ResizeTool({
   maxBytes: 19 * 1024, // compression target, safely under the 20 KB limit
   limitKB: 20,
   showFaceGuides: false,
+  autoSelect: "signature",
+});
+
+window.addEventListener("resize", () => {
+  for (const tool of [photoTool, signTool]) {
+    if (!tool.img) continue;
+    tool.refreshScale();
+    tool.draw();
+  }
 });
 
 /* ---------- Tabs ---------- */
