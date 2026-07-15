@@ -6,9 +6,9 @@ Everything runs entirely in your browser — **nothing is uploaded to any server
 
 ## Live app
 
-👉 **https://USERNAME.github.io/PhotoResizer/**
+👉 **https://asees86.github.io/PhotoResizer/**
 
-_(Replace `USERNAME` with your GitHub username after enabling GitHub Pages.)_
+_(Available once GitHub Pages is enabled for this repo.)_
 
 ## Features
 
