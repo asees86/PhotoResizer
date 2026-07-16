@@ -121,6 +121,34 @@ main { max-width: 980px; margin: 0 auto; padding: 0 16px 32px; }
   margin-bottom: 10px;
 }
 
+/* ---------- Acceptance meter ---------- */
+.accept { margin: 0 0 12px; }
+
+.accept-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: #e4e9ec;
+  overflow: hidden;
+}
+
+.accept-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 4px;
+  background: #9aa7af;
+  transition: width 0.15s, background 0.15s;
+}
+
+.accept.ok .accept-fill { background: var(--accent); }
+.accept.warn .accept-fill { background: #d9a419; }
+.accept.bad .accept-fill { background: #c0392b; }
+
+.accept-label { font-size: 0.85rem; font-weight: 600; margin: 6px 0 0; }
+.accept.ok .accept-label { color: var(--accent-dark); }
+.accept.warn .accept-label { color: #8a6a0e; }
+.accept.bad .accept-label { color: #c0392b; }
+.accept.unknown .accept-label { color: var(--muted); }
+
 /* ---------- Detail inputs ---------- */
 .detail-col label {
   display: block;

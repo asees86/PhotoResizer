@@ -76,6 +76,9 @@ class ResizeTool {
     this.sizeInfo = document.getElementById(`${this.prefix}-size`);
     this.download = document.getElementById(`${this.prefix}-download`);
     this.imgWarn = document.getElementById(`${this.prefix}-imgwarn`);
+    this.acceptEl = document.getElementById(`${this.prefix}-accept`);
+    this.acceptFill = document.getElementById(`${this.prefix}-accept-fill`);
+    this.acceptLabel = document.getElementById(`${this.prefix}-accept-label`);
 
     this.ctx = this.canvas.getContext("2d");
     this.img = null;
@@ -87,6 +90,8 @@ class ResizeTool {
     this.renderSeq = 0;
     this.imgSeq = 0;       // invalidates pending auto-select on new image
     this.selDirty = false; // user touched the selection; auto-select must not stomp it
+    this.faceBox = undefined; // {cx, cy, d, count} in canvas px; undefined =
+                              // detection pending, null = no face found
 
     this.bindUpload();
     this.bindCropper();
@@ -163,6 +168,7 @@ class ResizeTool {
       this.imgWarn.hidden = true;
     }
 
+    this.faceBox = undefined; // new image — face detection pending
     this.draw();
     this.scheduleUpdate();
     this.selDirty = false;
@@ -175,22 +181,33 @@ class ResizeTool {
   }
 
   /* Reposition the selection via face/signature detection. Runs after the
-     default selection has painted; keeps it silently on failure. */
+     default selection has painted; keeps it silently on failure. The face
+     box is cached for the acceptance meter even when the user has already
+     started dragging (only the selection itself is left alone then). */
   runAutoSelect() {
     if (!this.autoSelect || !window.AutoSelect) return;
     const seq = ++this.imgSeq;
     setTimeout(() => {
-      if (seq !== this.imgSeq || this.selDirty) return;
+      if (seq !== this.imgSeq) return;
       let sel = null;
       try {
-        sel = this.autoSelect === "face"
-          ? AutoSelect.detectFaceSelection(this.img, this.ratio, this.canvas.width, this.canvas.height)
-          : AutoSelect.detectSignatureSelection(this.img, this.ratio, this.canvas.width, this.canvas.height);
-      } catch (_) { /* fall back to the default selection */ }
-      if (seq !== this.imgSeq || this.selDirty || !sel) return;
-      this.sel = sel;
-      this.draw();
-      this.scheduleUpdate();
+        if (this.autoSelect === "face") {
+          const face = AutoSelect.detectFace(this.img, this.canvas.width);
+          if (seq !== this.imgSeq) return;
+          this.faceBox = face;
+          if (face) sel = AutoSelect.faceSelection(face, this.ratio, this.canvas.width, this.canvas.height);
+        } else {
+          sel = AutoSelect.detectSignatureSelection(this.img, this.ratio, this.canvas.width, this.canvas.height);
+        }
+      } catch (_) {
+        if (this.autoSelect === "face") this.faceBox = null;
+      }
+      if (seq !== this.imgSeq) return;
+      if (sel && !this.selDirty) {
+        this.sel = sel;
+        this.draw();
+      }
+      this.scheduleUpdate(); // refresh meter now that the face box is known
     }, 30);
   }
 
@@ -294,6 +311,7 @@ class ResizeTool {
         this.sel = this.ratioRect(anchor.x, anchor.y, p.x, p.y);
       }
       this.draw();
+      this.assessAcceptance(); // live meter while dragging (cheap math)
       this.scheduleUpdate();
     });
 
@@ -336,15 +354,16 @@ class ResizeTool {
       ctx.strokeRect(c[key].x - hs / 2 + 0.5, c[key].y - hs / 2 + 0.5, hs - 1, hs - 1);
     }
 
-    // head-position guides (official sample): two pink squares, upper-center
-    // of the selection. Drawn on the crop canvas only, never exported.
-    if (this.showFaceGuides) {
+    // head-position guides: the official Thulasi mask squares (measured
+    // from mask.gif) mapped from final-file pixels into selection space.
+    // Drawn on the crop canvas only, never exported.
+    if (this.showFaceGuides && window.AutoSelect && AutoSelect.SPEC) {
+      const g = AutoSelect.SPEC;
+      const s = sel.w / g.outW; // uniform: sel.w/150 === sel.h/165
       ctx.strokeStyle = "#f9a8d4";
       ctx.lineWidth = 1;
-      const outer = sel.w * 0.55;
-      const inner = sel.w * 0.36;
-      ctx.strokeRect(sel.x + (sel.w - outer) / 2, sel.y + sel.h * 0.20, outer, outer);
-      ctx.strokeRect(sel.x + (sel.w - inner) / 2, sel.y + sel.h * 0.28, inner, inner);
+      ctx.strokeRect(sel.x + g.outer.x * s, sel.y + g.outer.y * s, g.outer.size * s, g.outer.size * s);
+      ctx.strokeRect(sel.x + g.inner.x * s, sel.y + g.inner.y * s, g.inner.size * s, g.inner.size * s);
     }
   }
 
@@ -401,11 +420,105 @@ class ResizeTool {
     this.updateTimer = setTimeout(() => this.updateOutput(), 150);
   }
 
+  /* Estimate the chance the official Thulasi validator accepts the current
+     crop, by mapping the cached face detection into final-file pixels and
+     scoring it against AutoSelect.SPEC (see autoselect.js for the measured
+     official geometry). Each rule scores 0..1 on a ramp around its
+     threshold; the overall chance is the worst rule. */
+  assessAcceptance() {
+    if (!this.acceptEl || !window.AutoSelect || !AutoSelect.SPEC) return;
+
+    const render = (pct, cls, msg) => {
+      this.acceptEl.hidden = false;
+      this.acceptFill.style.width = `${pct}%`;
+      this.acceptEl.className = `accept ${cls}`;
+      this.acceptLabel.textContent = msg;
+    };
+
+    if (this.faceBox === undefined) {
+      render(0, "unknown", "Detecting face…");
+      return;
+    }
+    if (this.faceBox === null) {
+      render(0, "bad",
+        "No face detected — PSC may reject with “Either no face or multiple faces found”. " +
+        "Use a clear, front-facing photo.");
+      return;
+    }
+
+    const g = AutoSelect.SPEC;
+    const face = this.faceBox;
+    const s = g.outW / this.sel.w; // canvas px -> final-file px
+    const fw = AutoSelect.K_HAAR * face.d * s; // Haar-style face box size
+    const cx = (face.cx - this.sel.x) * s;
+    const cy = (face.cy - this.sel.y) * s;
+    const half = fw / 2;
+
+    // Each rule: [margin in final-file px (negative = violated), message, hint]
+    const rules = [
+      [Math.min(cx - half, g.outW - (cx + half), cy - half, g.imgH - (cy + half)),
+        "the face is cut off by the crop — PSC would find no face", "adjust the crop to include the whole head"],
+      [fw - g.minFace,
+        "the face is too small — PSC: “Face is not as per specification”", "shrink the selection (zoom in)"],
+      [g.maxFace - fw,
+        "the face is too large for the outer square", "enlarge the selection (zoom out)"],
+      [g.chinMaxY - (cy + half),
+        "the chin is too low — PSC: “Chin must be above the bottom line of outer square”", "move the selection down or enlarge it"],
+      [(cy - half) - g.outer.y,
+        "the face is too high above the outer square", "move the selection up or shrink it"],
+      [g.centerTol - Math.abs(cx - g.centerX),
+        "the face is off-center — PSC: “Face is not in the center”", "center the selection on the face"],
+      [g.centerTol - Math.abs(cy - g.centerY),
+        "the face is off-center vertically — PSC: “Face is not in the center”", "move the selection up or down"],
+    ];
+
+    // ramp: margin 0 = borderline 50%, +/-SOFT px away = certain pass/fail
+    const SOFT = 8;
+    let score = 1, worst = null;
+    for (const [margin, msg, hint] of rules) {
+      const r = Math.min(Math.max(0.5 + margin / (2 * SOFT), 0), 1);
+      if (r < score) { score = r; worst = { msg, hint }; }
+    }
+    if (face.count > 1) {
+      score = Math.min(score, 0.2);
+      worst = {
+        msg: `${face.count} faces detected — PSC: “Either no face or multiple faces found”`,
+        hint: "use a photo of the candidate alone",
+      };
+    }
+
+    // human-review rule, not the automated face check: a clipped head top
+    // caps the score at amber instead of hard-failing
+    if (face.headTop !== null && face.headTop !== undefined) {
+      const headTopOut = (face.headTop - this.sel.y) * s;
+      if (headTopOut < -1) {
+        const cap = Math.min(Math.max(0.7 + headTopOut / 30, 0.25), 0.7);
+        if (cap < score) {
+          score = cap;
+          worst = {
+            msg: "the top of the head is cut off — PSC reviewers may reject the photo",
+            hint: "enlarge the selection upward",
+          };
+        }
+      }
+    }
+
+    const pct = Math.round(score * 100);
+    if (pct >= 80) {
+      render(pct, "ok", `PSC acceptance: ~${pct}% — the face sits well inside the official squares.`);
+    } else if (pct >= 40) {
+      render(pct, "warn", `PSC acceptance: ~${pct}% — risky: ${worst.msg}. Try: ${worst.hint}.`);
+    } else {
+      render(pct, "bad", `PSC acceptance: ~${pct}% — likely rejected: ${worst.msg}. Try: ${worst.hint}.`);
+    }
+  }
+
   async updateOutput() {
     if (!this.img) return;
     const seq = ++this.renderSeq;
 
     const blocked = this.checkBlocked ? this.checkBlocked() : false;
+    this.assessAcceptance();
 
     const canvas = this.compose();
     const blob = await toJpegUnder(canvas, this.maxBytes);

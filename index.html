@@ -42,8 +42,12 @@
 
         <div class="crop-col">
           <h2>1. Select the crop area</h2>
-          <p class="help">The selection is centered by default. Drag it to move &middot; drag a corner to resize &middot; drag on the image to draw a new selection. Position the face/head inside the pink squares.</p>
+          <p class="help">The face is selected automatically to match the official Thulasi face check. Drag to move &middot; drag a corner to resize &middot; drag on the image to draw a new selection. The pink squares are the official guide: the face must fill the inner square but stay inside the outer one.</p>
           <canvas class="crop-canvas" id="photo-canvas" width="360" height="420"></canvas>
+          <div class="accept" id="photo-accept" hidden>
+            <div class="accept-bar"><div class="accept-fill" id="photo-accept-fill"></div></div>
+            <p class="accept-label" id="photo-accept-label"></p>
+          </div>
           <button class="btn ghost" id="photo-change" type="button">Choose a different photo</button>
           <p class="warn" id="photo-imgwarn" hidden></p>
         </div>
@@ -86,6 +90,7 @@
         <li>Colour or black &amp; white; <strong>face and shoulders</strong> clearly visible</li>
         <li>White or light-coloured background</li>
         <li>Face straight and fully centered; <strong>eyes clearly visible</strong></li>
+        <li>The Thulasi upload runs a <strong>face check</strong>: the face must fill the inner guide square, stay inside the outer one, and the chin must be above the outer square's bottom line (this tool's auto-selection and acceptance meter follow the same geometry)</li>
         <li>No caps or goggles (religious headwear allowed); no side-profile or unclear face</li>
       </ul>
     </aside>
